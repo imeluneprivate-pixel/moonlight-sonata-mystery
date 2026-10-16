@@ -100,24 +100,41 @@ function render(){
 let selectedNarrationVoice=null;
 function setNarrationStatus(message){const el=document.getElementById("narrationStatus");if(el)el.textContent=message}
 function stopNarration(){if("speechSynthesis" in window){window.speechSynthesis.cancel()}const pause=document.getElementById("pauseNarration");if(pause)pause.textContent="Ⅱ Pause"}
-function speakCurrent(){
- if(!("speechSynthesis" in window)||!("SpeechSynthesisUtterance" in window)){setNarrationStatus("Narration is not supported in this browser. Try an updated Chrome or Edge browser.");return}
+async function getAvailableVoices(){
+ const synth=window.speechSynthesis;
+ let voices=synth.getVoices();
+ if(voices.length) return voices;
+ // Some browsers populate the voice list asynchronously.
+ await new Promise(resolve=>{
+   let finished=false;
+   const done=()=>{if(finished)return;finished=true;synth.removeEventListener?.("voiceschanged",done);resolve()};
+   synth.addEventListener?.("voiceschanged",done,{once:true});
+   setTimeout(done,1500);
+ });
+ return synth.getVoices();
+}
+async function speakCurrent(){
+ if(!("speechSynthesis" in window)||!("SpeechSynthesisUtterance" in window)){setNarrationStatus("Narration is not supported in this browser. Try Microsoft Edge.");return}
  window.speechSynthesis.cancel();
+ setNarrationStatus("Looking for Microsoft EmmaMultilingual Online (Natural)…");
+ const voices=await getAvailableVoices();
+ // Require the requested voice. Do not silently substitute a different English voice.
+ selectedNarrationVoice=voices.find(v=>/Microsoft EmmaMultilingual Online \(Natural\)/i.test(v.name)&&/^en[-_]US$/i.test(v.lang))
+  ||voices.find(v=>/Microsoft EmmaMultilingual Online \(Natural\)/i.test(v.name));
+ if(!selectedNarrationVoice){
+   const available=voices.filter(v=>/^en[-_]US$/i.test(v.lang)).map(v=>v.name).slice(0,5);
+   setNarrationStatus("Emma voice was not found in this browser. Try opening this HTML in Microsoft Edge on Windows and check that the Emma voice is installed. "+(available.length?"Available en-US voices: "+available.join("; "):"No en-US voices were detected."));
+   return;
+ }
  const s=stages[current];
  const textToRead=s.title.replace(/^\d+\.\s/,'')+". "+s.story.join(" ");
  const utterance=new SpeechSynthesisUtterance(textToRead);
- const voices=window.speechSynthesis.getVoices();
- selectedNarrationVoice=voices.find(v=>/Microsoft EmmaMultilingual Online \(Natural\)/i.test(v.name)&&/^en[-_]US$/i.test(v.lang))
-  ||voices.find(v=>/Microsoft EmmaMultilingual Online/i.test(v.name))
-  ||voices.find(v=>/^en[-_]US$/i.test(v.lang))
-  ||voices.find(v=>/^en/i.test(v.lang))
-  ||null;
- if(selectedNarrationVoice)utterance.voice=selectedNarrationVoice;
- utterance.lang=selectedNarrationVoice?selectedNarrationVoice.lang:"en-US";
+ utterance.voice=selectedNarrationVoice;
+ utterance.lang=selectedNarrationVoice.lang || "en-US";
  utterance.rate=0.86;utterance.pitch=0.82;utterance.volume=1;
- utterance.onstart=()=>{setNarrationStatus("Narration playing with "+(selectedNarrationVoice?selectedNarrationVoice.name:"the browser default voice")+". For the best effect, use headphones.");const b=document.getElementById("pauseNarration");if(b)b.textContent="Ⅱ Pause"};
- utterance.onend=()=>{setNarrationStatus("Narration finished. You can replay it or continue to the next stage.");const b=document.getElementById("pauseNarration");if(b)b.textContent="Ⅱ Pause"};
- utterance.onerror=()=>setNarrationStatus("The browser could not play the narration. Try pressing Play again.");
+ utterance.onstart=()=>{setNarrationStatus("Narration playing with "+selectedNarrationVoice.name+" ("+selectedNarrationVoice.lang+").");const b=document.getElementById("pauseNarration");if(b)b.textContent="Ⅱ Pause"};
+ utterance.onend=()=>{setNarrationStatus("Narration finished. Voice used: "+selectedNarrationVoice.name+".");const b=document.getElementById("pauseNarration");if(b)b.textContent="Ⅱ Pause"};
+ utterance.onerror=()=>setNarrationStatus("The browser could not play Emma's voice. Try opening this file in Microsoft Edge and press Play again.");
  window.speechSynthesis.speak(utterance);
 }
 function check(){
